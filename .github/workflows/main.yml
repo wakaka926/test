@@ -1,4 +1,4 @@
-name: Check Deleted Lines
+name: Check Deleted Lines with Context
 
 on:
   pull_request:
@@ -6,75 +6,145 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write # 必须开启此权限才能发表评论
+  pull-requests: write
 
 jobs:
   check-and-comment:
     runs-on: ubuntu-latest
     steps:
-      # 1. 检出代码
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 重要：必须获取完整历史以进行 diff 对比
+          fetch-depth: 0
 
-      # 2. 获取并提取删除的行
-      - name: Extract deleted lines
+      - name: Generate Diff
         id: diff
         run: |
-          # 获取目标分支（通常是 main 或 master）和当前 PR 分支的基准点
+          # 获取 diff 并保存到文件
+          # -U0: 不需要上下文行，只看变化
           BASE_REF="origin/${{ github.base_ref }}"
           HEAD_REF="origin/${{ github.head_ref }}"
           
-          echo "Comparing $BASE_REF...$HEAD_REF"
-          
-          # 使用 git diff 获取差异
-          # -U0: 不需要上下文行（context），只看变化的行
-          # grep '^-': 筛选以 - 开头的行（删除行）
-          # grep -v '^---': 排除文件头信息的 --- 行
-          # || true: 确保即使没有删除行也不报错退出
-          
-          git diff -U0 $BASE_REF...$HEAD_REF | grep '^-' | grep -v '^---' > deleted_lines.txt || true
-          
-          # 统计行数
-          COUNT=$(wc -l < deleted_lines.txt)
-          echo "deleted_count=$COUNT" >> $GITHUB_OUTPUT
-          
-          # 打印一下供调试看
-          echo "Found $COUNT deleted lines."
+          # 将原始 diff 保存，不要 grep，我们需要完整的结构来解析
+          git diff -U0 $BASE_REF...$HEAD_REF > full_diff.txt
 
-      # 3. 如果有删除行，发表评论
-      - name: Comment on PR
-        if: steps.diff.outputs.deleted_count > 0 # 只有当删除行数大于 0 时才评论
+      - name: Process Diff and Comment
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
             
-            // 读取步骤2中生成的删除行文件
-            const deletedContent = fs.readFileSync('deleted_lines.txt', 'utf8');
-            
-            // 构造评论内容 (由于内容可能很长，建议放入折叠块中)
-            const body = `
-            ### ⚠️ 检测到代码删除
-            
-            本次 PR 共删除了 **${{ steps.diff.outputs.deleted_count }}** 行代码。
-            
-            <details>
-            <summary>点击查看删除的具体内容</summary>
-            
-            \`\`\`diff
-            ${deletedContent}
-            \`\`\`
-            
-            </details>
-            `;
-            
-            // 调用 GitHub API 发送评论
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
+            try {
+              const diffContent = fs.readFileSync('full_diff.txt', 'utf8');
+              const lines = diffContent.split('\n');
+              
+              let currentFile = '';
+              let currentLineNum = 0;
+              let deletedLines = [];
+              
+              // === 解析逻辑 ===
+              lines.forEach(line => {
+                // 1. 捕捉文件名 (格式: --- a/path/to/file)
+                if (line.startsWith('--- a/')) {
+                  currentFile = line.substring(6); // 去掉前面的 "--- a/"
+                } 
+                // 忽略 /dev/null 的情况（通常是新增文件，没有删除行）
+                else if (line.startsWith('--- /dev/null')) {
+                  currentFile = '';
+                }
+                // 2. 捕捉块头获取行号 (格式: @@ -10,2 +10,0 @@)
+                else if (line.startsWith('@@ ')) {
+                  // 正则提取 - 后面的数字，即原文件的起始行号
+                  const match = line.match(/^@@ -(\d+)/);
+                  if (match) {
+                    currentLineNum = parseInt(match[1], 10);
+                  }
+                }
+                // 3. 捕捉删除行 (以 - 开头，但不是 --- 或其他元数据)
+                else if (line.startsWith('-') && !line.startsWith('---')) {
+                  if (currentFile) {
+                    // 保存结果：文件名 | 行号 | 代码内容
+                    // content.substring(1) 是为了去掉行首的 '-' 号
+                    deletedLines.push({
+                      file: currentFile,
+                      line: currentLineNum,
+                      content: line.substring(1) 
+                    });
+                    
+                    // 同一个块内的连续删除，行号递增
+                    currentLineNum++;
+                  }
+                }
+                // 注意：如果只是上下文行或新增行（+），不用递增原文件行号的计数器
+                // 但因为我们用了 -U0，理论上很少有上下文行，除非 diff 格式特殊
+              });
+
+              // === 如果没有删除行，直接退出 ===
+              if (deletedLines.length === 0) {
+                console.log("没有检测到删除行。");
+                return;
+              }
+
+              // === 构建 Markdown 表格 ===
+              // 为了防止评论过长，如果超过 50 行，建议只显示一部分或提示
+              const maxDisplay = 100; 
+              let tableRows = deletedLines.slice(0, maxDisplay).map(item => {
+                // 对代码内容里的 ` 符号进行转义，防止破坏 Markdown 格式
+                const safeContent = item.content.replace(/`/g, '\\`');
+                // 生成一行表格
+                return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
+              }).join('\n');
+
+              let warningMsg = '';
+              if (deletedLines.length > maxDisplay) {
+                warningMsg = `\n> ⚠️ 删除行数过多 (${deletedLines.length} 行)，仅显示前 ${maxDisplay} 行。`;
+              }
+
+              const body = `
+              ### 🚨 代码删除报告
+              
+              本次 PR 共删除了 **${deletedLines.length}** 行代码。详情如下：
+              
+              <details open>
+              <summary>点击折叠/展开详细列表</summary>
+              
+              | 文件名 | 原行号 | 删除内容 |
+              | :--- | :---: | :--- |
+              ${tableRows}
+              
+              </details>
+              ${warningMsg}
+              `;
+
+              // === 发送/更新评论 (带有防重复逻辑) ===
+              const comments = await github.rest.issues.listComments({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+
+              const botComment = comments.data.find(c => 
+                c.user.type === 'Bot' && c.body.includes('### 🚨 代码删除报告')
+              );
+
+              if (botComment) {
+                await github.rest.issues.updateComment({
+                  comment_id: botComment.id,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: body
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: body
+                });
+              }
+
+            } catch (error) {
+              console.error("解析或评论失败:", error);
+              core.setFailed(error.message);
+            }
