@@ -1,0 +1,80 @@
+name: Check Deleted Lines
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write # 必须开启此权限才能发表评论
+
+jobs:
+  check-and-comment:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 重要：必须获取完整历史以进行 diff 对比
+
+      # 2. 获取并提取删除的行
+      - name: Extract deleted lines
+        id: diff
+        run: |
+          # 获取目标分支（通常是 main 或 master）和当前 PR 分支的基准点
+          BASE_REF="origin/${{ github.base_ref }}"
+          HEAD_REF="origin/${{ github.head_ref }}"
+          
+          echo "Comparing $BASE_REF...$HEAD_REF"
+          
+          # 使用 git diff 获取差异
+          # -U0: 不需要上下文行（context），只看变化的行
+          # grep '^-': 筛选以 - 开头的行（删除行）
+          # grep -v '^---': 排除文件头信息的 --- 行
+          # || true: 确保即使没有删除行也不报错退出
+          
+          git diff -U0 $BASE_REF...$HEAD_REF | grep '^-' | grep -v '^---' > deleted_lines.txt || true
+          
+          # 统计行数
+          COUNT=$(wc -l < deleted_lines.txt)
+          echo "deleted_count=$COUNT" >> $GITHUB_OUTPUT
+          
+          # 打印一下供调试看
+          echo "Found $COUNT deleted lines."
+
+      # 3. 如果有删除行，发表评论
+      - name: Comment on PR
+        if: steps.diff.outputs.deleted_count > 0 # 只有当删除行数大于 0 时才评论
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            
+            // 读取步骤2中生成的删除行文件
+            const deletedContent = fs.readFileSync('deleted_lines.txt', 'utf8');
+            
+            // 构造评论内容 (由于内容可能很长，建议放入折叠块中)
+            const body = `
+            ### ⚠️ 检测到代码删除
+            
+            本次 PR 共删除了 **${{ steps.diff.outputs.deleted_count }}** 行代码。
+            
+            <details>
+            <summary>点击查看删除的具体内容</summary>
+            
+            \`\`\`diff
+            ${deletedContent}
+            \`\`\`
+            
+            </details>
+            `;
+            
+            // 调用 GitHub API 发送评论
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
