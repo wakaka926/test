@@ -1,0 +1,10 @@
+node_modules
+dist
+unpackage
+.git
+.gitignore
+.hbuilderx
+.idea
+.vscode
+*.log
+.DS_Store

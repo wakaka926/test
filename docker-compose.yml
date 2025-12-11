@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  campus-front:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campus-front
+    ports:
+      - "9090:80"
+    restart: unless-stopped
+    networks:
+      - campus-network
+
+networks:
+  campus-network:
+    driver: bridge

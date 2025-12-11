@@ -1,0 +1,223 @@
+{
+	"pages": [
+		{
+			"path": "pages/loginWx",
+			"style": {
+				"navigationBarTitleText": "微信登录"
+			}
+		},
+		{
+			"path": "pages/home",
+			"style": {
+				"navigationBarTitleText": "主页"
+			}
+		},
+		{
+			"path": "pages/classmate",
+			"style": {
+				"navigationBarTitleText": "我的同学"
+			}
+		},
+		{
+			"path": "pages/personalCenter",
+			"style": {
+				"navigationBarTitleText": "个人中心"
+			}
+		},
+		{
+			"path": "pages/login",
+			"style": {
+				"navigationBarTitleText": "登录"
+			}
+		},
+		{
+			"path": "pages/register",
+			"style": {
+				"navigationBarTitleText": "注册"
+			}
+		},
+		{
+			"path": "pages/resetPwd",
+			"style": {
+				"navigationBarTitleText": "重置密码"
+			}
+		},
+		{
+			"path": "pages/index",
+			"style": {
+				"navigationBarTitleText": "若依移动端框架",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/work/index",
+			"style": {
+				"navigationBarTitleText": "工作台"
+			}
+		},
+		{
+			"path": "pages/mine/index",
+			"style": {
+				"navigationBarTitleText": "我的"
+			}
+		},
+		{
+			"path": "pages/mine/avatar/index",
+			"style": {
+				"navigationBarTitleText": "修改头像"
+			}
+		},
+		{
+			"path": "pages/mine/info/index",
+			"style": {
+				"navigationBarTitleText": "个人信息"
+			}
+		},
+		{
+			"path": "pages/mine/info/edit",
+			"style": {
+				"navigationBarTitleText": "编辑资料"
+			}
+		},
+		{
+			"path": "pages/mine/pwd/index",
+			"style": {
+				"navigationBarTitleText": "修改密码"
+			}
+		},
+		{
+			"path": "pages/mine/setting/index",
+			"style": {
+				"navigationBarTitleText": "应用设置"
+			}
+		},
+		{
+			"path": "pages/mine/help/index",
+			"style": {
+				"navigationBarTitleText": "常见问题"
+			}
+		},
+		{
+			"path": "pages/mine/about/index",
+			"style": {
+				"navigationBarTitleText": "关于我们"
+			}
+		},
+		{
+			"path": "pages/common/webview/index",
+			"style": {
+				"navigationBarTitleText": "浏览网页"
+			}
+		},
+		{
+			"path": "pages/common/textview/index",
+			"style": {
+				"navigationBarTitleText": "浏览文本"
+			}
+		},
+		{
+			"path": "pages/recharge",
+			"style": {
+				"navigationBarTitleText": "会员充值"
+			}
+		},
+		{
+			"path": "pages/mockExam",
+			"style": {
+				"navigationBarTitleText": "模拟考试"
+			}
+		},
+		{
+			"path": "pages/examAnswer",
+			"style": {
+				"navigationBarTitleText": "答题",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/onlineCourse",
+			"style": {
+				"navigationBarTitleText": "线上课程"
+			}
+		},
+		{
+			"path": "pages/generalPractice",
+			"style": {
+				"navigationBarTitleText": "全科练习"
+			}
+		},
+		{
+			"path": "pages/incorrectCollection",
+			"style": {
+				"navigationBarTitleText": "错题收藏"
+			}
+		},
+		{
+			"path": "pages/studyRecord",
+			"style": {
+				"navigationBarTitleText": "学习记录"
+			}
+		},
+		{
+			"path": "pages/practice",
+			"style": {
+				"navigationBarTitleText": "练习"
+			}
+		},
+		{
+			"path": "pages/incorrectPractice",
+			"style": {
+				"navigationBarTitleText": "错题练习"
+			}
+		},
+		{
+			"path": "pages/practical",
+			"style": {
+				"navigationBarTitleText": "实操"
+			}
+		},
+		{
+			"path": "pages/practicalType",
+			"style": {
+				"navigationBarTitleText": "实操练习"
+			}
+		},
+		{
+			"path": "pages/schoolnfo",
+			"style": {
+				"navigationBarTitleText": "学校信息"
+			}
+		}
+	],
+	"tabBar": {
+		"color": "#000000",
+		"selectedColor": "#000000",
+		"borderStyle": "white",
+		"backgroundColor": "#ffffff",
+		"list": [
+			{
+				"pagePath": "pages/index",
+				"iconPath": "static/images/tabbar/home.png",
+				"selectedIconPath": "static/images/tabbar/home_.png",
+				"text": "首页"
+			},
+			{
+				"pagePath": "pages/work/index",
+				"iconPath": "static/images/tabbar/work.png",
+				"selectedIconPath": "static/images/tabbar/work_.png",
+				"text": "工作台"
+			},
+			{
+				"pagePath": "pages/mine/index",
+				"iconPath": "static/images/tabbar/mine.png",
+				"selectedIconPath": "static/images/tabbar/mine_.png",
+				"text": "我的"
+			}
+		]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "RuoYi",
+		"navigationBarBackgroundColor": "#FFFFFF"
+	}
+}
