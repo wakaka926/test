@@ -11,12 +11,4 @@ import {
 	useDict
 } from '@/utils/dict'
 
-export function createApp() {
-	const app = createSSRApp(App)
-	app.use(store)
-	app.config.globalProperties.useDict = useDict
-	install(app)
-	return {
-		app
-	}
-}
+
