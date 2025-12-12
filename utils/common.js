@@ -16,10 +16,7 @@ export function toast(content) {
 export function showConfirm(content) {
   return new Promise((resolve, reject) => {
     uni.showModal({
-      title: '提示',
-      content: content,
-      cancelText: '取消',
-      confirmText: '确定',
+
       success: function(res) {
         resolve(res)
       }
