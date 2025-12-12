@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: write # 必须开启此权限才能发表评论
 
 jobs:
   check-and-comment:
@@ -43,41 +43,27 @@ jobs:
               let currentLineNum = 0;
               let deletedLines = [];
               
-              // === 解析逻辑 ===
+              // === 解析逻辑 (保持不变) ===
               lines.forEach(line => {
-                // 1. 捕捉文件名 (格式: --- a/path/to/file)
                 if (line.startsWith('--- a/')) {
-                  currentFile = line.substring(6); // 去掉前面的 "--- a/"
-                } 
-                // 忽略 /dev/null 的情况（通常是新增文件，没有删除行）
-                else if (line.startsWith('--- /dev/null')) {
+                  currentFile = line.substring(6);
+                } else if (line.startsWith('--- /dev/null')) {
                   currentFile = '';
-                }
-                // 2. 捕捉块头获取行号 (格式: @@ -10,2 +10,0 @@)
-                else if (line.startsWith('@@ ')) {
-                  // 正则提取 - 后面的数字，即原文件的起始行号
+                } else if (line.startsWith('@@ ')) {
                   const match = line.match(/^@@ -(\d+)/);
                   if (match) {
                     currentLineNum = parseInt(match[1], 10);
                   }
-                }
-                // 3. 捕捉删除行 (以 - 开头，但不是 --- 或其他元数据)
-                else if (line.startsWith('-') && !line.startsWith('---')) {
+                } else if (line.startsWith('-') && !line.startsWith('---')) {
                   if (currentFile) {
-                    // 保存结果：文件名 | 行号 | 代码内容
-                    // content.substring(1) 是为了去掉行首的 '-' 号
                     deletedLines.push({
                       file: currentFile,
                       line: currentLineNum,
                       content: line.substring(1) 
                     });
-                    
-                    // 同一个块内的连续删除，行号递增
                     currentLineNum++;
                   }
                 }
-                // 注意：如果只是上下文行或新增行（+），不用递增原文件行号的计数器
-                // 但因为我们用了 -U0，理论上很少有上下文行，除非 diff 格式特殊
               });
 
               // === 如果没有删除行，直接退出 ===
@@ -86,13 +72,12 @@ jobs:
                 return;
               }
 
-              // === 构建 Markdown 表格 ===
-              // 为了防止评论过长，如果超过 50 行，建议只显示一部分或提示
+              // === 构建 Markdown 表格 (保持不变) ===
               const maxDisplay = 100; 
+              const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); // 可选：添加时间戳
+              
               let tableRows = deletedLines.slice(0, maxDisplay).map(item => {
-                // 对代码内容里的 ` 符号进行转义，防止破坏 Markdown 格式
                 const safeContent = item.content.replace(/`/g, '\\`');
-                // 生成一行表格
                 return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
               }).join('\n');
 
@@ -100,9 +85,10 @@ jobs:
               if (deletedLines.length > maxDisplay) {
                 warningMsg = `\n> ⚠️ 删除行数过多 (${deletedLines.length} 行)，仅显示前 ${maxDisplay} 行。`;
               }
-
+              
+              // 构造新的评论内容
               const body = `
-              ### 🚨 代码删除报告
+              ### 🚨 代码删除报告 - ${now}
               
               本次 PR 共删除了 **${deletedLines.length}** 行代码。详情如下：
               
@@ -115,36 +101,23 @@ jobs:
               
               </details>
               ${warningMsg}
+              
+              ---
+              *注：此评论由 \`${{ github.event_name }}}\` 事件触发，运行于 ${{ github.sha }}。*
               `;
 
-              // === 发送/更新评论 (带有防重复逻辑) ===
-              const comments = await github.rest.issues.listComments({
+              // === 仅创建新评论 (移除查找和更新逻辑) ===
+              await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
+                body: body
               });
-
-              const botComment = comments.data.find(c => 
-                c.user.type === 'Bot' && c.body.includes('### 🚨 代码删除报告')
-              );
-
-              if (botComment) {
-                await github.rest.issues.updateComment({
-                  comment_id: botComment.id,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body: body
-                });
-              } else {
-                await github.rest.issues.createComment({
-                  issue_number: context.issue.number,
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  body: body
-                });
-              }
-
+              
             } catch (error) {
               console.error("解析或评论失败:", error);
-              core.setFailed(error.message);
+              // 注意：如果你使用了 core.setFailed，你需要确保 actions/github-script@v7 具有访问 core 库的权限，
+              // 但对于简单的错误报告，console.error 配合流程自然失败通常就足够了。
+              // core.setFailed(error.message); 
+              throw error; // 抛出错误以使 Action 失败
             }
