@@ -147,9 +147,11 @@ jobs:
 
               const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
               
+              const maxDisplay = 500;
+              
               let modifiedTableRows = '';
               if (modifiedLines.length > 0) {
-                modifiedTableRows = modifiedLines.slice(0, Math.min(50, modifiedLines.length)).map(item => {
+                modifiedTableRows = modifiedLines.slice(0, Math.min(maxDisplay, modifiedLines.length)).map(item => {
                   const safeOld = item.oldContent.replace(/`/g, '\\`').replace(/\|/g, '\\|');
                   const safeNew = item.newContent.replace(/`/g, '\\`').replace(/\|/g, '\\|');
                   return `| ${item.file} | ${item.oldLine} → ${item.newLine} | \`${safeOld}\` | \`${safeNew}\` |`;
@@ -158,7 +160,7 @@ jobs:
               
               let deletedTableRows = '';
               if (deletedLines.length > 0) {
-                deletedTableRows = deletedLines.slice(0, Math.min(50, deletedLines.length)).map(item => {
+                deletedTableRows = deletedLines.slice(0, Math.min(maxDisplay, deletedLines.length)).map(item => {
                   const safeContent = item.content.replace(/`/g, '\\`').replace(/\|/g, '\\|');
                   return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
                 }).join('\n');
@@ -166,7 +168,7 @@ jobs:
 
               let addedTableRows = '';
               if (addedLines.length > 0) {
-                addedTableRows = addedLines.slice(0, Math.min(50, addedLines.length)).map(item => {
+                addedTableRows = addedLines.slice(0, Math.min(maxDisplay, addedLines.length)).map(item => {
                   const safeContent = item.content.replace(/`/g, '\\`').replace(/\|/g, '\\|');
                   return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
                 }).join('\n');
@@ -186,8 +188,8 @@ jobs:
                 bodyParts.push(`| 文件名 | 行号变化 | 修改前 | 修改后 |`);
                 bodyParts.push(`| :--- | :---: | :--- | :--- |`);
                 bodyParts.push(modifiedTableRows);
-                if (modifiedLines.length > 50) {
-                  bodyParts.push(`\n> ⚠️ 修改行数过多，仅显示前 50 行。`);
+                if (modifiedLines.length > maxDisplay) {
+                  bodyParts.push(`\n> ⚠️ 修改行数过多，仅显示前 ${maxDisplay} 行。`);
                 }
                 bodyParts.push(`\n</details>\n`);
               }
@@ -199,8 +201,8 @@ jobs:
                 bodyParts.push(`| 文件名 | 原行号 | 删除内容 |`);
                 bodyParts.push(`| :--- | :---: | :--- |`);
                 bodyParts.push(deletedTableRows);
-                if (deletedLines.length > 50) {
-                  bodyParts.push(`\n> ⚠️ 删除行数过多，仅显示前 50 行。`);
+                if (deletedLines.length > maxDisplay) {
+                  bodyParts.push(`\n> ⚠️ 删除行数过多，仅显示前 ${maxDisplay} 行。`);
                 }
                 bodyParts.push(`\n</details>\n`);
               }
@@ -212,8 +214,8 @@ jobs:
                 bodyParts.push(`| 文件名 | 新行号 | 添加内容 |`);
                 bodyParts.push(`| :--- | :---: | :--- |`);
                 bodyParts.push(addedTableRows);
-                if (addedLines.length > 50) {
-                  bodyParts.push(`\n> ⚠️ 添加行数过多，仅显示前 50 行。`);
+                if (addedLines.length > maxDisplay) {
+                  bodyParts.push(`\n> ⚠️ 添加行数过多，仅显示前 ${maxDisplay} 行。`);
                 }
                 bodyParts.push(`\n</details>\n`);
               }
