@@ -7,12 +7,7 @@ export function updateUserPwd(oldPassword, newPassword) {
     oldPassword,
     newPassword
   }
-  return request({
-    url: '/system/user/profile/updatePwd',
-    method: 'put',
-    data: data
-  })
-}
+
 
 // 查询用户个人信息
 export function getUserProfile() {
