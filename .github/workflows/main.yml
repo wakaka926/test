@@ -1,4 +1,4 @@
-name: Check Deleted Lines with Context
+name: Check All Changes with Context
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write # 必须开启此权限才能发表评论
+  pull-requests: write
 
 jobs:
   check-and-comment:
@@ -20,12 +20,9 @@ jobs:
       - name: Generate Diff
         id: diff
         run: |
-          # 获取 diff 并保存到文件
-          # -U0: 不需要上下文行，只看变化
           BASE_REF="origin/${{ github.base_ref }}"
           HEAD_REF="origin/${{ github.head_ref }}"
           
-          # 将原始 diff 保存，不要 grep，我们需要完整的结构来解析
           git diff -U0 $BASE_REF...$HEAD_REF > full_diff.txt
 
       - name: Process Diff and Comment
@@ -40,73 +37,134 @@ jobs:
               const lines = diffContent.split('\n');
               
               let currentFile = '';
-              let currentLineNum = 0;
+              let currentOldLineNum = 0;
+              let currentNewLineNum = 0;
               let deletedLines = [];
+              let addedLines = [];
               
-              // === 解析逻辑 (保持不变) ===
+              // === 解析逻辑 - 捕获所有变更 ===
               lines.forEach(line => {
                 if (line.startsWith('--- a/')) {
                   currentFile = line.substring(6);
                 } else if (line.startsWith('--- /dev/null')) {
                   currentFile = '';
+                } else if (line.startsWith('+++ b/')) {
+                  // 新文件
+                  if (currentFile === '') {
+                    currentFile = line.substring(6);
+                  }
                 } else if (line.startsWith('@@ ')) {
-                  const match = line.match(/^@@ -(\d+)/);
+                  // 解析行号信息: @@ -oldStart,oldCount +newStart,newCount @@
+                  const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
                   if (match) {
-                    currentLineNum = parseInt(match[1], 10);
+                    currentOldLineNum = parseInt(match[1], 10);
+                    currentNewLineNum = parseInt(match[2], 10);
                   }
                 } else if (line.startsWith('-') && !line.startsWith('---')) {
+                  // 删除的行
                   if (currentFile) {
                     deletedLines.push({
                       file: currentFile,
-                      line: currentLineNum,
-                      content: line.substring(1) 
+                      line: currentOldLineNum,
+                      content: line.substring(1),
+                      type: 'deleted'
                     });
-                    currentLineNum++;
+                    currentOldLineNum++;
                   }
+                } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                  // 添加的行
+                  if (currentFile) {
+                    addedLines.push({
+                      file: currentFile,
+                      line: currentNewLineNum,
+                      content: line.substring(1),
+                      type: 'added'
+                    });
+                    currentNewLineNum++;
+                  }
+                } else if (line.startsWith(' ')) {
+                  // 未变更的上下文行（如果使用了 -U0 则不会出现）
+                  currentOldLineNum++;
+                  currentNewLineNum++;
                 }
               });
 
-              // === 如果没有删除行，直接退出 ===
-              if (deletedLines.length === 0) {
-                console.log("没有检测到删除行。");
+              // === 合并所有变更 ===
+              const allChanges = [...deletedLines, ...addedLines];
+              
+              if (allChanges.length === 0) {
+                console.log("没有检测到代码变更。");
                 return;
               }
 
-              // === 构建 Markdown 表格 (保持不变) ===
-              const maxDisplay = 100; 
-              const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }); // 可选：添加时间戳
-              
-              let tableRows = deletedLines.slice(0, maxDisplay).map(item => {
-                const safeContent = item.content.replace(/`/g, '\\`');
-                return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
-              }).join('\n');
+              // === 构建统计信息 ===
+              const stats = {
+                total: allChanges.length,
+                deleted: deletedLines.length,
+                added: addedLines.length,
+                files: new Set([...deletedLines.map(d => d.file), ...addedLines.map(a => a.file)]).size
+              };
 
-              let warningMsg = '';
-              if (deletedLines.length > maxDisplay) {
-                warningMsg = `\n> ⚠️ 删除行数过多 (${deletedLines.length} 行)，仅显示前 ${maxDisplay} 行。`;
+              // === 构建 Markdown 表格 ===
+              const maxDisplay = 100;
+              const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+              
+              // 分别展示删除和添加的行
+              let deletedTableRows = '';
+              if (deletedLines.length > 0) {
+                deletedTableRows = deletedLines.slice(0, Math.min(50, deletedLines.length)).map(item => {
+                  const safeContent = item.content.replace(/`/g, '\\`').replace(/\|/g, '\\|');
+                  return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
+                }).join('\n');
               }
-              
-              // 构造新的评论内容
+
+              let addedTableRows = '';
+              if (addedLines.length > 0) {
+                addedTableRows = addedLines.slice(0, Math.min(50, addedLines.length)).map(item => {
+                  const safeContent = item.content.replace(/`/g, '\\`').replace(/\|/g, '\\|');
+                  return `| ${item.file} | ${item.line} | \`${safeContent}\` |`;
+                }).join('\n');
+              }
+
+              // 构造评论内容
               const body = `
-              ### 🚨 代码删除报告 - ${now}
-              
-              本次 PR 共删除了 **${deletedLines.length}** 行代码。详情如下：
-              
-              <details open>
-              <summary>点击折叠/展开详细列表</summary>
-              
-              | 文件名 | 原行号 | 删除内容 |
-              | :--- | :---: | :--- |
-              ${tableRows}
-              
-              </details>
-              ${warningMsg}
-              
-              ---
-              *注：此评论由 \`${{ github.event_name }}}\` 事件触发，运行于 ${{ github.sha }}。*
+### 📊 代码变更报告 - ${now}
+
+本次 PR 共涉及 **${stats.files}** 个文件，变更 **${stats.total}** 行代码：
+- ➖ 删除：**${stats.deleted}** 行
+- ➕ 添加：**${stats.added}** 行
+
+${deletedLines.length > 0 ? `
+<details ${deletedLines.length <= 20 ? 'open' : ''}>
+<summary>🔴 删除的代码行 (${deletedLines.length} 行)</summary>
+
+| 文件名 | 原行号 | 删除内容 |
+| :--- | :---: | :--- |
+${deletedTableRows}
+
+${deletedLines.length > 50 ? `> ⚠️ 删除行数过多，仅显示前 50 行。` : ''}
+
+</details>
+` : ''}
+
+${addedLines.length > 0 ? `
+<details ${addedLines.length <= 20 ? 'open' : ''}>
+<summary>🟢 添加的代码行 (${addedLines.length} 行)</summary>
+
+| 文件名 | 新行号 | 添加内容 |
+| :--- | :---: | :--- |
+${addedTableRows}
+
+${addedLines.length > 50 ? `> ⚠️ 添加行数过多，仅显示前 50 行。` : ''}
+
+</details>
+` : ''}
+
+---
+*此评论由 \`${{ github.event_name }}\` 事件触发，运行于 ${{ github.sha }}。*
               `;
 
-              // === 仅创建新评论 (移除查找和更新逻辑) ===
+              // === 创建评论 ===
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
@@ -116,8 +174,5 @@ jobs:
               
             } catch (error) {
               console.error("解析或评论失败:", error);
-              // 注意：如果你使用了 core.setFailed，你需要确保 actions/github-script@v7 具有访问 core 库的权限，
-              // 但对于简单的错误报告，console.error 配合流程自然失败通常就足够了。
-              // core.setFailed(error.message); 
-              throw error; // 抛出错误以使 Action 失败
+              throw error;
             }
