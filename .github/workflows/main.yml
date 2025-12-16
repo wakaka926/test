@@ -42,26 +42,22 @@ jobs:
               let deletedLines = [];
               let addedLines = [];
               
-              // === 解析逻辑 - 捕获所有变更 ===
               lines.forEach(line => {
                 if (line.startsWith('--- a/')) {
                   currentFile = line.substring(6);
                 } else if (line.startsWith('--- /dev/null')) {
                   currentFile = '';
                 } else if (line.startsWith('+++ b/')) {
-                  // 新文件
                   if (currentFile === '') {
                     currentFile = line.substring(6);
                   }
                 } else if (line.startsWith('@@ ')) {
-                  // 解析行号信息: @@ -oldStart,oldCount +newStart,newCount @@
                   const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
                   if (match) {
                     currentOldLineNum = parseInt(match[1], 10);
                     currentNewLineNum = parseInt(match[2], 10);
                   }
                 } else if (line.startsWith('-') && !line.startsWith('---')) {
-                  // 删除的行
                   if (currentFile) {
                     deletedLines.push({
                       file: currentFile,
@@ -72,7 +68,6 @@ jobs:
                     currentOldLineNum++;
                   }
                 } else if (line.startsWith('+') && !line.startsWith('+++')) {
-                  // 添加的行
                   if (currentFile) {
                     addedLines.push({
                       file: currentFile,
@@ -83,13 +78,11 @@ jobs:
                     currentNewLineNum++;
                   }
                 } else if (line.startsWith(' ')) {
-                  // 未变更的上下文行（如果使用了 -U0 则不会出现）
                   currentOldLineNum++;
                   currentNewLineNum++;
                 }
               });
 
-              // === 合并所有变更 ===
               const allChanges = [...deletedLines, ...addedLines];
               
               if (allChanges.length === 0) {
@@ -97,7 +90,6 @@ jobs:
                 return;
               }
 
-              // === 构建统计信息 ===
               const stats = {
                 total: allChanges.length,
                 deleted: deletedLines.length,
@@ -105,11 +97,8 @@ jobs:
                 files: new Set([...deletedLines.map(d => d.file), ...addedLines.map(a => a.file)]).size
               };
 
-              // === 构建 Markdown 表格 ===
-              const maxDisplay = 100;
               const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
               
-              // 分别展示删除和添加的行
               let deletedTableRows = '';
               if (deletedLines.length > 0) {
                 deletedTableRows = deletedLines.slice(0, Math.min(50, deletedLines.length)).map(item => {
@@ -126,45 +115,43 @@ jobs:
                 }).join('\n');
               }
 
-              // 构造评论内容
-              const body = `
-### 📊 代码变更报告 - ${now}
+              let bodyParts = [];
+              bodyParts.push(`### 📊 代码变更报告 - ${now}\n`);
+              bodyParts.push(`本次 PR 共涉及 **${stats.files}** 个文件，变更 **${stats.total}** 行代码：`);
+              bodyParts.push(`- ➖ 删除：**${stats.deleted}** 行`);
+              bodyParts.push(`- ➕ 添加：**${stats.added}** 行\n`);
 
-本次 PR 共涉及 **${stats.files}** 个文件，变更 **${stats.total}** 行代码：
-- ➖ 删除：**${stats.deleted}** 行
-- ➕ 添加：**${stats.added}** 行
+              if (deletedLines.length > 0) {
+                const detailsOpen = deletedLines.length <= 20 ? 'open' : '';
+                bodyParts.push(`<details ${detailsOpen}>`);
+                bodyParts.push(`<summary>🔴 删除的代码行 (${deletedLines.length} 行)</summary>\n`);
+                bodyParts.push(`| 文件名 | 原行号 | 删除内容 |`);
+                bodyParts.push(`| :--- | :---: | :--- |`);
+                bodyParts.push(deletedTableRows);
+                if (deletedLines.length > 50) {
+                  bodyParts.push(`\n> ⚠️ 删除行数过多，仅显示前 50 行。`);
+                }
+                bodyParts.push(`\n</details>\n`);
+              }
 
-${deletedLines.length > 0 ? `
-<details ${deletedLines.length <= 20 ? 'open' : ''}>
-<summary>🔴 删除的代码行 (${deletedLines.length} 行)</summary>
+              if (addedLines.length > 0) {
+                const detailsOpen = addedLines.length <= 20 ? 'open' : '';
+                bodyParts.push(`<details ${detailsOpen}>`);
+                bodyParts.push(`<summary>🟢 添加的代码行 (${addedLines.length} 行)</summary>\n`);
+                bodyParts.push(`| 文件名 | 新行号 | 添加内容 |`);
+                bodyParts.push(`| :--- | :---: | :--- |`);
+                bodyParts.push(addedTableRows);
+                if (addedLines.length > 50) {
+                  bodyParts.push(`\n> ⚠️ 添加行数过多，仅显示前 50 行。`);
+                }
+                bodyParts.push(`\n</details>\n`);
+              }
 
-| 文件名 | 原行号 | 删除内容 |
-| :--- | :---: | :--- |
-${deletedTableRows}
+              bodyParts.push(`---`);
+              bodyParts.push(`*此评论由 \`${{ github.event_name }}\` 事件触发，运行于 ${{ github.sha }}。*`);
 
-${deletedLines.length > 50 ? `> ⚠️ 删除行数过多，仅显示前 50 行。` : ''}
+              const body = bodyParts.join('\n');
 
-</details>
-` : ''}
-
-${addedLines.length > 0 ? `
-<details ${addedLines.length <= 20 ? 'open' : ''}>
-<summary>🟢 添加的代码行 (${addedLines.length} 行)</summary>
-
-| 文件名 | 新行号 | 添加内容 |
-| :--- | :---: | :--- |
-${addedTableRows}
-
-${addedLines.length > 50 ? `> ⚠️ 添加行数过多，仅显示前 50 行。` : ''}
-
-</details>
-` : ''}
-
----
-*此评论由 \`${{ github.event_name }}\` 事件触发，运行于 ${{ github.sha }}。*
-              `;
-
-              // === 创建评论 ===
               await github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
