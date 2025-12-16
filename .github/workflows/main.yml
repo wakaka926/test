@@ -41,17 +41,51 @@ jobs:
               let currentNewLineNum = 0;
               let deletedLines = [];
               let addedLines = [];
+              let modifiedLines = [];
               
-              lines.forEach(line => {
+              let pendingDeletes = [];
+              let pendingAdds = [];
+              
+              const flushPending = () => {
+                if (pendingDeletes.length > 0 && pendingAdds.length > 0) {
+                  const minLen = Math.min(pendingDeletes.length, pendingAdds.length);
+                  for (let i = 0; i < minLen; i++) {
+                    modifiedLines.push({
+                      file: pendingDeletes[i].file,
+                      oldLine: pendingDeletes[i].line,
+                      newLine: pendingAdds[i].line,
+                      oldContent: pendingDeletes[i].content,
+                      newContent: pendingAdds[i].content,
+                      type: 'modified'
+                    });
+                  }
+                  for (let i = minLen; i < pendingDeletes.length; i++) {
+                    deletedLines.push(pendingDeletes[i]);
+                  }
+                  for (let i = minLen; i < pendingAdds.length; i++) {
+                    addedLines.push(pendingAdds[i]);
+                  }
+                } else {
+                  deletedLines.push(...pendingDeletes);
+                  addedLines.push(...pendingAdds);
+                }
+                pendingDeletes = [];
+                pendingAdds = [];
+              };
+              
+              lines.forEach((line, index) => {
                 if (line.startsWith('--- a/')) {
+                  flushPending();
                   currentFile = line.substring(6);
                 } else if (line.startsWith('--- /dev/null')) {
+                  flushPending();
                   currentFile = '';
                 } else if (line.startsWith('+++ b/')) {
                   if (currentFile === '') {
                     currentFile = line.substring(6);
                   }
                 } else if (line.startsWith('@@ ')) {
+                  flushPending();
                   const match = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
                   if (match) {
                     currentOldLineNum = parseInt(match[1], 10);
@@ -59,7 +93,7 @@ jobs:
                   }
                 } else if (line.startsWith('-') && !line.startsWith('---')) {
                   if (currentFile) {
-                    deletedLines.push({
+                    pendingDeletes.push({
                       file: currentFile,
                       line: currentOldLineNum,
                       content: line.substring(1),
@@ -69,7 +103,7 @@ jobs:
                   }
                 } else if (line.startsWith('+') && !line.startsWith('+++')) {
                   if (currentFile) {
-                    addedLines.push({
+                    pendingAdds.push({
                       file: currentFile,
                       line: currentNewLineNum,
                       content: line.substring(1),
@@ -78,12 +112,21 @@ jobs:
                     currentNewLineNum++;
                   }
                 } else if (line.startsWith(' ')) {
+                  flushPending();
                   currentOldLineNum++;
                   currentNewLineNum++;
+                } else {
+                  if (index === lines.length - 1 || 
+                      lines[index + 1].startsWith('@@') || 
+                      lines[index + 1].startsWith('---')) {
+                    flushPending();
+                  }
                 }
               });
+              
+              flushPending();
 
-              const allChanges = [...deletedLines, ...addedLines];
+              const allChanges = [...deletedLines, ...addedLines, ...modifiedLines];
               
               if (allChanges.length === 0) {
                 console.log("没有检测到代码变更。");
@@ -91,13 +134,27 @@ jobs:
               }
 
               const stats = {
-                total: allChanges.length,
+                total: deletedLines.length + addedLines.length + modifiedLines.length,
                 deleted: deletedLines.length,
                 added: addedLines.length,
-                files: new Set([...deletedLines.map(d => d.file), ...addedLines.map(a => a.file)]).size
+                modified: modifiedLines.length,
+                files: new Set([
+                  ...deletedLines.map(d => d.file), 
+                  ...addedLines.map(a => a.file),
+                  ...modifiedLines.map(m => m.file)
+                ]).size
               };
 
               const now = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+              
+              let modifiedTableRows = '';
+              if (modifiedLines.length > 0) {
+                modifiedTableRows = modifiedLines.slice(0, Math.min(50, modifiedLines.length)).map(item => {
+                  const safeOld = item.oldContent.replace(/`/g, '\\`').replace(/\|/g, '\\|');
+                  const safeNew = item.newContent.replace(/`/g, '\\`').replace(/\|/g, '\\|');
+                  return `| ${item.file} | ${item.oldLine} → ${item.newLine} | \`${safeOld}\` | \`${safeNew}\` |`;
+                }).join('\n');
+              }
               
               let deletedTableRows = '';
               if (deletedLines.length > 0) {
@@ -117,9 +174,23 @@ jobs:
 
               let bodyParts = [];
               bodyParts.push(`### 📊 代码变更报告 - ${now}\n`);
-              bodyParts.push(`本次 PR 共涉及 **${stats.files}** 个文件，变更 **${stats.total}** 行代码：`);
+              bodyParts.push(`本次 PR 共涉及 **${stats.files}** 个文件，变更 **${stats.total}** 处：`);
+              bodyParts.push(`- 🔄 修改：**${stats.modified}** 处`);
               bodyParts.push(`- ➖ 删除：**${stats.deleted}** 行`);
               bodyParts.push(`- ➕ 添加：**${stats.added}** 行\n`);
+
+              if (modifiedLines.length > 0) {
+                const detailsOpen = modifiedLines.length <= 20 ? 'open' : '';
+                bodyParts.push(`<details ${detailsOpen}>`);
+                bodyParts.push(`<summary>🔄 修改的代码行 (${modifiedLines.length} 处)</summary>\n`);
+                bodyParts.push(`| 文件名 | 行号变化 | 修改前 | 修改后 |`);
+                bodyParts.push(`| :--- | :---: | :--- | :--- |`);
+                bodyParts.push(modifiedTableRows);
+                if (modifiedLines.length > 50) {
+                  bodyParts.push(`\n> ⚠️ 修改行数过多，仅显示前 50 行。`);
+                }
+                bodyParts.push(`\n</details>\n`);
+              }
 
               if (deletedLines.length > 0) {
                 const detailsOpen = deletedLines.length <= 20 ? 'open' : '';
